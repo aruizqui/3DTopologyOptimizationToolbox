@@ -63,8 +63,8 @@ function [Ki,B_accum, VOL] = hex3DShapeFunction(nc,C)
         B(6, 1:betaLength)= XYZderivation(3,:);
         B(6,2*betaLength+1:3*betaLength) = XYZderivation(1,:);
         
-        B_accum = B_accum + B * w * detJ/1e3;
-        VOL = VOL + w * det(J)/1e3;
+        B_accum = B_accum + B * w * detJ;
+        VOL = VOL + w * det(J);
         Ki = Ki +  B' * C * B* w * detJ;
         
     end

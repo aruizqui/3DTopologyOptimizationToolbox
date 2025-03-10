@@ -120,13 +120,14 @@ classdef rMesh < handle
                     elemsToPlot = setdiff(1:obj.numElem, obj.zeroElements);                
                 end
             
-                if ~isempty(varargin) > 0 && (~isempty(varargin{1}))
+                if ~isempty(varargin) && ~isempty(varargin{1})
                     colorValue = varargin{1};
-                    obj.tetrasurf(elemsToPlot, colorValue)
+                    obj.tetrasurf(elemsToPlot, colorValue);
                 else
-                    obj.tetrasurf(elemsToPlot, [0.8   0.8   1])
+                    obj.tetrasurf(elemsToPlot, [0.8,   0.8,   1]);
                 end
                 daspect([1 1 1])
+                
             %HEX8
             elseif obj.typeofElement == 8
                 disp('Mesh built with HEX8 elements')

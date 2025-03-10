@@ -57,12 +57,12 @@ classdef optimizationObject < handle
 
             switch settings.method
                 case {'SIMP', 'simp', 'Simp', 's', 'S'}
-                    obj.p = settings.p;
+                    obj.p = obj.ss.p;
                     obj.ss.method = 'SIMP';
                     obj.x = obj.ss.Vstar*ones(obj.fem.rMesh.numElem, 1);
                     obj.ss.extraIter = 0;
                 case {'BESO', 'beso', 'Beso', 'b', 'B'}
-                    obj.p = 1;
+                    obj.p = obj.ss.p;
                     obj.ss.method = 'BESO';
                     obj.x = ones(obj.fem.rMesh.numElem, 1);    
             end
@@ -287,8 +287,11 @@ classdef optimizationObject < handle
                 obj.ALPHA(i) = 0.5*ui'*K_i*ui;
             end
             
-            % SIMP Method (if p == 1 (BESO Method): this has no Effect)
-            obj.ALPHA = obj.p.*(obj.x).^(obj.p-1).*obj.ALPHA;
+            if strcmp(obj.ss.method,'BESO')
+                obj.ALPHA = (obj.x).^(obj.p-1).*obj.ALPHA;
+            elseif strcmp(obj.ss.method, 'SIMP')
+                obj.ALPHA = 2*(obj.x).^(obj.p-1).*obj.ALPHA;
+            end
         end
 
         function sensitivitySmoothing(obj)
@@ -337,12 +340,13 @@ classdef optimizationObject < handle
             [DEs, FEs] = obj.designElements;
             
             currentVolume = obj.x'*obj.VOL;      
-            Vgoal = obj.ss.Vstar * obj.Vtot; % Objective final Volume (V*)
+            Vgoal = obj.ss.Vstar * obj.Vtot; 
             
             if currentVolume > Vgoal
-                obj.Vi(obj.iteration) = currentVolume * (1 - obj.ss.reductionRate);
+                obj.Vi(obj.iteration) = currentVolume *...
+                    (1 - obj.ss.reductionRate);
             else
-                obj.Vi(obj.iteration) = Vgoal; % Detén la reducción en Vstar
+                obj.Vi(obj.iteration) = Vgoal;
             end
             
             fprintf('Iteración %d: Volumen actual = %.2f, Volumen objetivo = %.2f\n', ...
@@ -352,13 +356,14 @@ classdef optimizationObject < handle
             % Remove the lowest performing elements        
             for j = 1:obj.ss.maxRemovedElems
                 lowest = (obj.ALPHA == min(obj.ALPHA(DEs) + (1-obj.x(DEs))*1e12));
+                
+                % Check if removing this batch will drop below Vgoal
+                if obj.x'*obj.VOL-sum(obj.VOL(lowest)) < obj.Vi(obj.iteration)
+                    break;% Stop before going below target volume
+                end
+
                 obj.x(lowest) = obj.ss.xmin;
                 numRemoved = numRemoved + sum(lowest);
-
-                if obj.x'*obj.VOL < obj.Vi(obj.iteration)%/...
-                                        %(1+obj.ss.revivalRate)
-                    break
-                end
             end
             fprintf('Number of elements removed: %d\n', numRemoved);
 
@@ -377,8 +382,8 @@ classdef optimizationObject < handle
             fprintf('Number of elements revived: %d\n', numRevived);
             obj.x(FEs) = 1;
             
-            fprintf('Updated densities (x): Min %.4f, Max %.4f, Mean %.4f\n', ...
-            min(obj.x), max(obj.x), mean(obj.x));
+            fprintf('Updated densities (x): Min %.4f, Max %.4f', ...
+            min(obj.x), max(obj.x));
             end
 
         function updateDensitiesSIMP(obj)
@@ -442,32 +447,28 @@ classdef optimizationObject < handle
                     ttl = types2{varargin{2}};
                 otherwise 
                     if all(obj.ss.method == 'BESO')
-                    	% val = log(obj.ALPHA);
-                        val = obj.VM;
+                        val = log(obj.ALPHA);
                     	ttl = sprintf("BESO\n Volume Fraction %f", ...
                         obj.x'*obj.VOL/sum(obj.VOL(DEs)));
                     else 
-                        % val = obj.x;
-                        val = obj.VM;
+                        val = obj.x;
+                        % val = obj.VM;
                         ttl = sprintf("SIMP\n Volume Fraction %f", ...
                         obj.x'*obj.VOL/sum(obj.VOL(DEs)));
                     end
             end
            
-           %some info
-           fprintf('Iteración %d: Valores mínimos y máximos para graficar: [%.4f, %.4f]\n', ...
-                    obj.iteration, min(val), max(val));
-           
            obj.fem.rMesh.plot(val, living)
            title(ttl)
            cb = colorbar;
-           if strcmpi(plotType, 'VM') || strcmpi(plotType, 'Von-Misses') || strcmpi(plotType, 'von-misses')
-                ylabel(cb, 'Von Mises Stress (MPa)', 'FontSize', 12, 'FontWeight', 'bold');
-           else
-           end
+               if strcmpi(plotType, 'VM') || strcmpi(plotType, 'Von-Misses') || strcmpi(plotType, 'von-misses')
+                    ylabel(cb, 'Von Mises Stress (MPa)', 'FontSize', 12, 'FontWeight', 'bold');
+               else
+
+               end
            drawnow
 
-           if obj.ss.outputAllIterations == 1 && (plotType(1) == 'i') && mod(obj.iteration, 5) == 0
+           if obj.ss.outputAllIterations == 1 && (plotType(1) == 'i')
                 % savefig(sprintf('ITERATIONS/%s/iteration%i', ...
                 %                   obj.folderName, obj.iteration))
                 saveas(gcf, sprintf('ITERATIONS/%s/iteration%i.png',...
@@ -506,25 +507,19 @@ classdef optimizationObject < handle
                 disp('___________________________________________________')
                 fprintf('Iteration %i / %i \n', ...
                                             obj.iteration, obj.ss.numIter)
+                
                 obj.updateALPHA
                 obj.updateDensities
-
-                for n = 1:obj.fem.rMesh.numNodes
-                    Ux = obj.displacements(n);
-                    Uy = obj.displacements(n + obj.fem.rMesh.numNodes);
-                    Uz = obj.displacements(n + 2 * obj.fem.rMesh.numNodes);
-                    
-                    fprintf('%5d   %12.6e   %12.6e   %12.6e\n', n, Ux, Uy, Uz);
-                end
-                disp('___________________________________________________')
                 obj.calculateStresses
+                mean(obj.compliance)
+                
                 figure(obj.iterFigNum)
                 hold off
                 obj.plot
             end
             obj.endTime = toc;
             fprintf('Total Optimization Time: %i Seconds\n', obj.endTime)
-            
+            figure(obj.finalFigNum)
             obj.saveFinalResults
         end
         
@@ -543,52 +538,34 @@ classdef optimizationObject < handle
             save(sprintf('RESULTS/%s/ENDWORKSPACE',obj.folderName)) 
         end
 
-        function saveFinalResults(obj)
-            
+        function saveFinalResults(obj)            
             % To save final optimization results
-    
-            %Create STL file of final design
+
+            % Create STL file of final design
             if strcmp(obj.elementType, 'TET4')
                 [~, conn, X0, Y0, Z0] = obj.boundary1(obj.ss.cutoff);
                 TR = triangulation(conn, X0, Y0, Z0);
                 stlwrite(TR, sprintf('RESULTS/%s/result.stl', obj.folderName), 'text')
-            else
-            % elseif strcmp(obj.elementType, 'HEX8')
+            elseif strcmp(obj.elementType, 'HEX8')
                 
             end
             
             obj.saveResults
+            obj.plot('VM');
+            set(gca, 'ColorScale', 'log');
 
-            vonMisesFig = sprintf('RESULTS/%s/vonMises.fig',obj.folderName);
+            vonMisesFig = sprintf('RESULTS/%s/vonMises.png',obj.folderName);
             saveas(gcf, vonMisesFig)
+
+            meanCompliance = mean(obj.compliance);
+            fprintf('Mean Compliance: %.2f Nmm\n', meanCompliance);
+            save(sprintf('RESULTS/%s/Compliance.mat',obj.folderName), 'meanCompliance');
 
             maxVonMises = max(obj.vonMisses); % Get maximum stress value
             fprintf('Maximum Von Mises stress: %.2f MPa\n', maxVonMises);
-            save(sprintf('RESULTS/%s/VonMisesResults.mat',obj.folderName), 'maxVonMises');
-
-            figure(obj.finalFigNum)
-            obj.plot('VM');
-            set(gca, 'ColorScale', 'log');
+            save(sprintf('RESULTS/%s/VonMisesResults.mat',obj.folderName), 'maxVonMises');            
         end
         
-        function runFEM(obj)
-            obj.generateStiffness;
-            obj.calculateDisplacements;
-            obj.calculateStresses;
-
-            % Imprimir desplazamientos nodales en X, Y y Z
-            fprintf('\nDesplazamientos nodales:\n');
-            for n = 1:obj.fem.rMesh.numNodes
-                Ux = obj.displacements(n);
-                Uy = obj.displacements(n + obj.fem.rMesh.numNodes);
-                Uz = obj.displacements(n + 2 * obj.fem.rMesh.numNodes);
-                fprintf('Nodo %d: Ux = %.6e, Uy = %.6e, Uz = %.6e\n', n, Ux, Uy, Uz);
-            end
-    
-            % Imprimir el esfuerzo máximo de Von Mises
-            maxVonMises = max(obj.VM);
-            fprintf('\nEsfuerzo máximo de Von Mises: %.6f MPa\n', maxVonMises);
-        end
 
         function varargout = boundary1(obj, varargin)
             % Plot the outside Surface and return the volume using nodes
@@ -661,22 +638,32 @@ classdef optimizationObject < handle
         function c = compliance(obj)
             % Returns Compliance calculated as the dot product of nodal
             % forces and nodal displacemnents
-            c = obj.fem.forceVector'*obj.displacements;
+            if strcmp(obj.ss.method,'BESO')
+                c = 0.5*obj.fem.forceVector'*obj.displacements;
+            elseif strcmp(obj.ss.method, 'SIMP')
+                c = obj.fem.forceVector'*obj.displacements;
+            end
+            
         end
         
         function calculateStresses(obj)
             % Calculate stress tensor in Voigt Form for all elements. Also
             % calculates Von-Misses stress.
             disp('Calculating Stresses       '); fprintf(repmat(' ', 1, 8))
+            
 
             numElem = obj.fem.rMesh.numElem;
-            % numNodes = obj.fem.rMesh.numNodes;
-            DOFs = zeros(numElem,24);
+            numNodesPerElem = size(obj.fem.rMesh.elemConn,2);
+            DOFsPerElem = 3*numNodesPerElem;
 
-            for i = 1:size(obj.fem.rMesh.elemConn,1)
-                DOFs(i,:) = [obj.fem.rMesh.elemConn(i,:), ...
-                        obj.fem.rMesh.elemConn(i,:) + obj.numNodes,...
-                        obj.fem.rMesh.elemConn(i,:) + obj.numNodes * 2];
+            DOFs = zeros(numElem,DOFsPerElem);
+
+            for i = 1:numElem
+                elementNodes = obj.fem.rMesh.elemConn(i,:);
+                
+                DOFs(i,:) = [elementNodes, ...
+                        elementNodes + obj.numNodes,...
+                        elementNodes + obj.numNodes * 2];
             end
 
             for i = 1:numElem

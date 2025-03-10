@@ -10,17 +10,17 @@ settings.keepForced = 1;        % Keep Elements that have nodes with Loads
 settings.outputAllIterations = 1;   % Save plot of each iteration
 settings.smoothingW = 1;        % Sensitivity Smoothing 
 settings.smoothingNum = 1;      % Number of times to apply smoothing filter
-settings.xmin = 0.001;         % Minimum Value of x (/=0 for stability
+settings.xmin = 0;         % Minimum Value of x (/=0 for stability
 settings.solveMethod = 'mldivide'; % Linear System solution method: mldivide, minres, symmlq
 settings.solveTol = 1e-6;       % Lin Sys Sol tolerance(if iterative)
 settings.solveIter = 5000;      % Max num Iter lin sys sol(if iterative)
 settings.cutoff = 0.3;          % Min. Element Partial Density to Display
 settings.clearConsIter = true;  % Clear Console Each iteration 
+settings.p = 10;                % Penalization Exponent
 
 % SIMP Settings
 settings.eta = 0.5;                      % Numerical Damping 
 settings.maxIterToConvergence = 100000;  % Max. Number of Convergence Iter
-settings.p = 1;                          % Penalization Exponent
 settings.m = 0.4;                        % Maximum Change in Element Density
 
 % BESO Settings 
